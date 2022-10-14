@@ -1,0 +1,664 @@
+---
+title: "Final Project"
+output: 
+  pdf_document: default
+---
+
+
+```{r}
+#!diagnostics off
+library(tidyverse)
+library(data.table)
+library(scales)
+library(randomForest)
+library(RColorBrewer)
+
+```
+
+loading datasets
+
+```{r}
+application_data <- read_csv("application_record.csv")
+credit_data <- read_csv("credit_record.csv")
+```
+
+```{r}
+head(application_data)
+```
+
+```{r}
+head(credit_data)
+```
+Intersection of application and credit data
+
+```{r}
+application_credit_id <- intersect(application_data$ID, credit_data$ID)
+```
+
+```{r}
+data_application <- filter(application_data, ID %in% application_credit_id)
+data_credit <- filter(credit_data, ID %in% application_credit_id)
+```
+
+
+
+```{r}
+head(data_credit)
+```
+
+```{r}
+credit_change <- data_credit
+credit_change$STATUS<- as.character(credit_change$STATUS)
+
+credit_change$STATUS[credit_change$STATUS == "5"] <- 7
+credit_change$STATUS[credit_change$STATUS == "4"] <- 6
+credit_change$STATUS[credit_change$STATUS == "3"] <- 5
+credit_change$STATUS[credit_change$STATUS == "2"] <- 4
+credit_change$STATUS[credit_change$STATUS == "1"] <- 3
+credit_change$STATUS[credit_change$STATUS == "0"] <- 2
+credit_change$STATUS[credit_change$STATUS == "C"] <- 1
+credit_change$STATUS[credit_change$STATUS == "X"] <- 0
+
+head(credit_change)
+```
+```{r}
+unique(data_credit$STATUS)
+unique(credit_change$STATUS)
+```
+
+```{r}
+worst_credit <- aggregate(credit_change$STATUS, by = list(credit_change$ID), max)
+names(worst_credit)[1] <- "ID"
+names(worst_credit)[2] <- "STATUS"
+worst_credit$STATUS <- as.numeric(worst_credit$STATUS)
+
+worst_credit
+```
+
+```{r}
+worst_credit1 <- worst_credit %>%
+  group_by(STATUS)%>%mutate(count=n())
+worst_credit1 <- unique(worst_credit1)
+worst_credit1 <- worst_credit1 %>% select(STATUS, count)
+worst_credit1
+```
+
+```{r}
+worst_credit1 %>% 
+ggplot(aes(x = STATUS)) +
+
+geom_point(aes(y = count), color = "red") +
+geom_line(aes(group = 1,y = count), color = "blue")
+```
+
+
+```{r}
+credit <-  worst_credit[ !(worst_credit$STATUS %in% "0"), ]
+credit
+```
+
+```{r}
+bad_balance <- credit
+bad_balance <- bad_balance %>%
+  mutate(Bad_client = ifelse(STATUS>=4, 1,0))
+bad_balance
+```
+
+```{r}
+bad_balance %>%
+  count(Bad_client)
+```
+
+
+```{r}
+customer <- application_data %>%
+  inner_join(bad_balance, by = "ID")
+```
+
+
+
+```{r}
+customer <- customer[ -c(19) ]
+customer
+```
+
+
+```{r}
+customer <- unique(setDT(customer), by = c(2:19))
+```
+
+```{r}
+customer <- customer %>% 
+  rename(
+    Gender = CODE_GENDER,
+    Own_Car = FLAG_OWN_CAR,
+    Own_Realty = FLAG_OWN_REALTY,
+    Children_Count = CNT_CHILDREN,
+    Annual_Income = AMT_INCOME_TOTAL,
+    Income_Type = NAME_INCOME_TYPE,
+    Education_Type = NAME_EDUCATION_TYPE,
+    Marital_Status = NAME_FAMILY_STATUS,
+    Housing_Type = NAME_HOUSING_TYPE,
+    Occupation_Type = OCCUPATION_TYPE,
+    Family_members_count = CNT_FAM_MEMBERS,
+    Client = Bad_client
+    )
+```
+
+
+```{r}
+customer %>%
+  count(Client)
+```
+
+```{r}
+ggplot(customer, aes(x=factor(1), fill=Gender))+
+geom_bar()+
+coord_polar(theta = "y")
+```
+
+
+```{r}
+write.csv(customer,"project.csv")
+```
+
+
+Checking missing values in both tables
+
+```{r}
+sapply(customer,function(x)any(is.na(x)))
+```
+
+Only the variable OCCUPATION_TYPE has missing values.
+
+Replacing missing values in occupation type as unknown 
+
+```{r}
+customer[is.na(customer)] <- "unknown"
+customer
+```
+```{r}
+customer %>%
+  count(Gender)
+```
+
+```{r}
+#customer$CODE_GENDER[customer$CODE_GENDER == "F"] <- 0
+#customer$CODE_GENDER[customer$CODE_GENDER == "M"] <- 1
+#customer$CODE_GENDER <- as.numeric(customer$CODE_GENDER)
+customer
+
+```
+
+
+```{r}
+customer1 <- customer
+customer1$Client[customer1$Client == 0] <- "Good"
+customer1$Client[customer1$Client == 1] <- "Bad"
+customer1
+```
+
+```{r}
+ggplot(customer) +
+  geom_bar(mapping = aes(x = Gender, fill = Gender))
+
+```
+
+
+
+```{r}
+ggplot(customer) +
+  geom_bar(mapping = aes(x = Gender, y = Client, fill = Gender), stat = "identity")
+  
+```
+
+
+```{r}
+(ggplot(customer1, aes(Client, ..count..)) + 
+  geom_bar(aes(fill = Client), position = "stack") + 
+  facet_grid(~Gender)) 
+
+```
+
+
+```{r}
+
+
+
+ggplot(customer1, aes(Own_Car, ..count..)) + 
+  geom_bar(aes(fill = Client), position = "stack")
+
+```
+
+
+```{r}
+filter(customer1, Gender == "F", Client == "Bad")
+```
+
+
+```{r}
+ggplot(customer) +
+  geom_bar(mapping = aes(x = Own_Car, fill = Own_Car))
+```
+
+```{r}
+ggplot(customer) +
+  geom_bar(mapping = aes(x = Own_Car, y = Client, fill = Own_Car), stat = "identity")
+```
+
+```{r}
+ggplot(customer1, aes(Own_Car, ..count..)) + 
+  geom_bar(aes(fill = Client), position = "stack")
+```
+
+
+
+```{r}
+new_customer1 <- customer1 %>%
+  select(Own_Car,Own_Realty,Work_Phone = FLAG_WORK_PHONE,Phone = FLAG_PHONE,Email =FLAG_EMAIL,Client, Gender)
+new_customer1
+```
+
+```{r}
+new_customer1$Own_Car[new_customer1$Own_Car == "Y"] <- 1
+new_customer1$Own_Car[new_customer1$Own_Car == "N"] <- 0
+new_customer1$Own_Realty[new_customer1$Own_Realty == "Y"] <- 1
+new_customer1$Own_Realty[new_customer1$Own_Realty == "N"] <- 0
+new_customer1$Own_Realty <- as.numeric(new_customer1$Own_Realty)
+new_customer1$Own_Car <- as.numeric(new_customer1$Own_Car)
+new_customer1
+```
+
+
+
+```{r}
+new_customer1 <- new_customer1 %>%
+  pivot_longer(c("Own_Car", "Own_Realty", "Work_Phone","Phone", "Email" ), names_to = "Flag", values_to = "value")
+new_customer1
+
+```
+
+```{r}
+(ggplot(new_customer1, aes(Gender, ..count..)) + 
+  geom_bar(aes(fill = Client), position = "dodge") + 
+  facet_wrap(~Flag)) 
+```
+
+```{r}
+customer %>%
+  count(Children_Count)
+```
+
+```{r}
+ggplot(customer1) + geom_boxplot(aes(x = Client, y = Children_Count))
+
+```
+
+```{r}
+customer$Children_Count[customer$Children_Count >= 5] <- 5
+customer1$Children_Count[customer1$Children_Count >= 5] <- 5
+customer1 %>%
+  count(Children_Count)
+```
+
+
+```{r}
+ggplot(customer) +
+  geom_bar(mapping = aes(x = Children_Count, y = Client, color = Children_Count), stat = "identity")
+
+```
+
+```{r}
+ggplot(customer1) +
+  geom_freqpoly(aes(Children_Count, colour=Client, fill = Client), binwidth = 0.1) 
+ggplot(customer1,aes(Children_Count, fill = Client))+
+  geom_density(alpha = 0.3)
+
+```
+
+```{r}
+customer$Family_members_count[customer$Family_members_count >= 5] <- 5
+customer1$Family_members_count[customer1$Family_members_count >= 5] <- 5
+```
+
+
+```{r}
+
+ggplot(customer1)+
+  geom_freqpoly(aes(Family_members_count,colour=Client, fill = Client),binwidth = 0.1)
+ggplot(customer1,aes(Family_members_count, fill = Client))+
+  geom_density(alpha = 0.4)
+
+
+```
+
+
+```{r}
+ggplot(customer1, mapping = aes(x = Annual_Income,fill = Client)) +
+  geom_histogram(bins = 100, colour="grey")
+
+ggplot(customer1, mapping = aes(x = Annual_Income,fill = Client, color = Client)) +
+  geom_freqpoly(bins = 100)
+```
+
+```{r}
+ggplot(customer) +
+  geom_bar(mapping = aes(x = Income_Type, y = Client, fill = Income_Type,color = Income_Type), stat = "identity")
+
+(ggplot(customer1, aes(Client, ..count..)) + 
+  geom_bar(aes(fill = Client), position = "dodge") + 
+  facet_wrap(~Income_Type)) 
+```
+
+```{r}
+ggplot(customer1, aes(Income_Type, ..count..)) + geom_bar(aes(fill = Client, color = Client), position = "dodge")
+```
+
+```{r}
+ggplot(customer) +
+  geom_bar(mapping = aes(x = Education_Type, y = Client, fill = Education_Type,color = Education_Type), stat = "identity")
+
+(ggplot(customer1, aes(Client, ..count..)) + 
+  geom_bar(aes(fill = Client), position = "dodge") +
+  facet_wrap(~Education_Type)) 
+```
+
+```{r}
+ggplot(customer) +
+  geom_bar(mapping = aes(x = Gender, y = Client, fill = Marital_Status,color = Marital_Status), stat = "identity")
+
+ggplot(customer1, aes(Marital_Status, ..count..)) + 
+  geom_bar(aes(fill = Client), position = "dodge")
+
+(ggplot(customer1, aes(Gender, ..count..)) + 
+  geom_bar(aes(fill = Client), position = "dodge") +
+  facet_wrap(~Marital_Status)) 
+
+ggplot(customer1,aes(x = Client, y = Annual_Income, color = Marital_Status)) + 
+  geom_boxplot()
+
+```
+
+```{r}
+ggplot(customer) +
+  geom_bar(mapping = aes(x = Housing_Type, y = Client, fill = Housing_Type,color = Housing_Type), stat = "identity")
+
+ggplot(customer1, aes(Housing_Type, ..count..)) + 
+  geom_bar(aes(fill = Client), position = "dodge")
+
+
+ggplot(customer1,aes(x = Client, y = Annual_Income, color = Housing_Type)) + 
+  geom_boxplot()
+```
+
+
+
+```{r}
+
+
+df <- customer1 %>%
+  select(Occupation_Type,Client)
+df <- df%>%group_by(Occupation_Type,Client)%>%mutate(count=n())
+df <- unique(df)
+
+myColors <- brewer.pal(6, "Set1")
+df <- transform(df, Occupation_Type = reorder(Occupation_Type, count))
+ggplot(df, aes(x=Occupation_Type, y=count, fill=Occupation_Type)) + geom_bar(stat="identity") + scale_colour_manual(name = "Occupation_Type", values=myColors) + coord_flip()
+
+myColors <- brewer.pal(6, "Set1")
+df <- transform(df, Occupation_Type = reorder(Occupation_Type, count))
+ggplot(df, aes(x=Occupation_Type, y=count, fill=Client)) + geom_bar(stat="identity") + scale_colour_manual(name = "Occupation_Type", values=myColors) + coord_flip()
+```
+
+```{r}
+customer1$Age = round(abs(customer1$DAYS_BIRTH/365), digits = 0)
+customer1
+```
+
+```{r}
+ggplot(customer1, mapping = aes(x = Age,fill = Client)) +
+  geom_histogram(bins = 40,colour='grey')
+```
+
+```{r}
+
+customer1 <- customer1 %>%
+  mutate(Experience = ifelse(DAYS_EMPLOYED <= 0, DAYS_EMPLOYED/365, 0 ))
+customer1
+```
+
+```{r}
+customer1$Experience = round(abs(customer1$Experience), digits = 0)
+customer1
+```
+
+```{r}
+ggplot(customer1, mapping = aes(x = Experience,fill = Client, color = Client)) +
+  geom_freqpoly(bins = 40)
+```
+
+```{r}
+total_data <- application_data %>%
+  inner_join(data_credit, by = "ID")
+total_data <- total_data[ !(total_data$STATUS %in% 'X'), ]
+total_data$STATUS <- ifelse(total_data$STATUS == "C", 0 , 1)
+
+```
+
+
+```{r}
+cora <- cor(customer$Children_Count,customer$Family_members_count)
+head(cora)
+```
+
+```{r}
+Model <- glm(STATUS ~ as.factor(CODE_GENDER) + as.factor(FLAG_OWN_CAR) + as.factor(FLAG_OWN_REALTY) + CNT_CHILDREN + AMT_INCOME_TOTAL + FLAG_WORK_PHONE + FLAG_MOBIL + FLAG_WORK_PHONE + FLAG_PHONE + FLAG_EMAIL + CNT_FAM_MEMBERS + as.factor(NAME_INCOME_TYPE) +as.factor(NAME_EDUCATION_TYPE) + as.factor(NAME_FAMILY_STATUS)+as.factor(NAME_HOUSING_TYPE) + DAYS_BIRTH + DAYS_EMPLOYED + as.factor(OCCUPATION_TYPE) + MONTHS_BALANCE, data = total_data, family = binomial)
+summary(Model)
+```
+
+```{r}
+
+custumer_numeric <- total_data[,c(-1,-13)]
+custumer_numeric$CODE_GENDER[custumer_numeric$CODE_GENDER == "F"] <- 0
+custumer_numeric$CODE_GENDER[custumer_numeric$CODE_GENDER == "M"] <- 1
+custumer_numeric$CODE_GENDER <- as.numeric(custumer_numeric$CODE_GENDER)
+custumer_numeric$FLAG_OWN_CAR[custumer_numeric$FLAG_OWN_CAR == "Y"] <- 1
+custumer_numeric$FLAG_OWN_CAR[custumer_numeric$FLAG_OWN_CAR == "N"] <- 0
+custumer_numeric$FLAG_OWN_CAR <- as.numeric(custumer_numeric$FLAG_OWN_CAR)
+custumer_numeric$FLAG_OWN_REALTY[custumer_numeric$FLAG_OWN_REALTY == "Y"] <- 1
+custumer_numeric$FLAG_OWN_REALTY[custumer_numeric$FLAG_OWN_REALTY == "N"] <- 0
+custumer_numeric$FLAG_OWN_REALTY <- as.numeric(custumer_numeric$FLAG_OWN_REALTY)
+custumer_numeric
+
+
+```
+
+```{r}
+df <- select_if(custumer_numeric, is.numeric)
+result <- cor(df, use="complete.obs")
+round(result,2)
+```
+
+```{r}
+ggplot(data_application,aes(x = CNT_CHILDREN, y = CNT_FAM_MEMBERS)) +
+  geom_point(colour = "red") +
+  geom_line(colour = "blue")
+
+```
+
+
+```{r}
+cormat <- melt(result)
+head(cormat)
+```
+
+
+```{r}
+#heatmap(correlation_res)
+
+ggplot(cormat, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile() +
+  theme(axis.text.x=element_text(angle=90,hjust=1)) +
+    geom_text(aes(label = round(value, 2))) +
+    scale_fill_gradient(low = "grey", high = "#f2766d") 
+```
+
+```{r}
+colnames2 = c("AMT_INCOME_TOTAL","FLAG_PHONE","FLAG_EMAIL","MONTHS_BALANCE","STATUS")
+student = ifelse(total_data$NAME_INCOME_TYPE=="Student",1,0)
+HigherEducation = ifelse(total_data$NAME_EDUCATION_TYPE=="Higher education",1,0)
+IncompleteEducation = ifelse(total_data$NAME_EDUCATION_TYPE=="Incomplete higher",1,0)
+SecondaryEducation = ifelse(total_data$NAME_EDUCATION_TYPE=="Secondary / secondary special",1,0)
+widow = ifelse(total_data$NAME_FAMILY_STATUS=="Widow",1,0)
+#The new data with the replaced columns
+new_app_data = total_data[colnames2]
+new_app_data = cbind(new_app_data,student,HigherEducation,IncompleteEducation,SecondaryEducation,widow)
+new_app_data <- unique(new_app_data)
+new_app_data
+```
+
+
+```{r}
+index_train = sample(1:nrow(new_app_data),2 / 3 * nrow(new_app_data))
+# Create training set: training_set
+train.data <- new_app_data[index_train, ]
+# Create test set: test_set
+test.data <- new_app_data[-index_train, ]
+```
+
+```{r}
+library(rpart)
+library(rpart.plot)
+fit <- rpart(STATUS~., data = train.data, method = 'class')
+rpart.plot(fit, extra = "auto")
+predict_unseen <-predict(fit, test.data, type = 'class')
+table_mat <- table(test.data$STATUS, predict_unseen)
+table_mat
+
+
+```
+
+```{r}
+accuracy_Test <- sum(diag(table_mat)) / sum(table_mat)
+accuracy_Test
+```
+
+
+```{r}
+accuracy_tune <- function(fit) {
+  predict_unseen <- predict(fit, test.data, type = 'class')
+  table_mat <- table(test.data$STATUS, predict_unseen)
+  table_mat
+  accuracy_Test <- sum(diag(table_mat)) / sum(table_mat)
+  accuracy_Test
+}
+```
+
+```{r}
+control <- rpart.control(minsplit = 20,
+                         minbucket = round(20 / 3),
+                         maxdepth = 30,
+                         cp = 0)
+tune_fit <- rpart(STATUS~., data = train.data, method = 'class', control = control)
+accuracy_tune(tune_fit)
+```
+
+```{r}
+total_data1 <- application_data %>%
+  inner_join(credit_data, by = "ID")
+```
+
+```{r}
+data = total_data1
+#data <-  data[ !(data$STATUS %in% "X"), ]
+data$STATUS= ifelse(data$STATUS == "C",0,1)
+
+data$CODE_GENDER[data$CODE_GENDER == "F"] <- 0
+data$CODE_GENDER[data$CODE_GENDER == "M"] <- 1
+data$CODE_GENDER <- as.numeric(data$CODE_GENDER)
+data$FLAG_OWN_CAR[data$FLAG_OWN_CAR == "Y"] <- 1
+data$FLAG_OWN_CAR[data$FLAG_OWN_CAR == "N"] <- 0
+data$FLAG_OWN_CAR <- as.numeric(data$FLAG_OWN_CAR)
+data$FLAG_OWN_REALTY[data$FLAG_OWN_REALTY == "Y"] <- 1
+data$FLAG_OWN_REALTY[data$FLAG_OWN_REALTY == "N"] <- 0
+data$FLAG_OWN_REALTY <- as.numeric(data$FLAG_OWN_REALTY)
+data[is.na(data)] <- "unknown"
+data <- data[, -1]
+data <- unique(data)
+data
+```
+
+```{r}
+col_names = c("CODE_GENDER","FLAG_OWN_CAR","CNT_CHILDREN","AMT_INCOME_TOTAL","FLAG_WORK_PHONE","FLAG_PHONE",
+              "FLAG_EMAIL","CNT_FAM_MEMBERS","NAME_INCOME_TYPE","NAME_EDUCATION_TYPE","NAME_FAMILY_STATUS",
+              "DAYS_EMPLOYED","MONTHS_BALANCE","STATUS")
+data = data[col_names]
+str(data)
+```
+
+```{r}
+colnames2 = c("AMT_INCOME_TOTAL","FLAG_PHONE","FLAG_EMAIL","MONTHS_BALANCE","STATUS")
+student = ifelse(data$NAME_INCOME_TYPE=="Student",1,0)
+HigherEducation = ifelse(data$NAME_EDUCATION_TYPE=="Higher education",1,0)
+IncompleteEducation = ifelse(data$NAME_EDUCATION_TYPE=="Incomplete higher",1,0)
+SecondaryEducation = ifelse(data$NAME_EDUCATION_TYPE=="Secondary / secondary special",1,0)
+widow = ifelse(data$NAME_FAMILY_STATUS=="Widow",1,0)
+
+dataNew = data[colnames2]
+dataNew = cbind(dataNew,student,HigherEducation,IncompleteEducation,SecondaryEducation,widow)
+#dataNew <- unique(dataNew)
+dataNew
+```
+
+```{r}
+index_train = sample(1:nrow(dataNew),0.7 * nrow(dataNew))
+# Create training set: training_set
+train.data <- dataNew[index_train, ]
+# Create test set: test_set
+test.data <- dataNew[-index_train, ]
+```
+
+```{r}
+data%>%
+  count(STATUS)
+```
+
+
+```{r}
+outputforest <- randomForest(as.factor(STATUS) ~ .,data = train.data[1:60000,],importance=TRUE)
+print(outputforest)
+```
+
+```{r}
+y_pred =predict(outputforest,newdata = test.data)
+```
+
+```{r}
+cm=table(test.data[,5],y_pred)
+cm
+```
+
+```{r}
+test_size = ceiling(0.3 * nrow(dataNew))
+#ceiling(test_size)
+samp = sample(nrow(dataNew), test_size,replace = FALSE)
+y_test= dataNew[samp,5]
+```
+
+
+```{r}
+
+accuracy_m1 = mean(y_test == y_pred)
+accuracy_m1
+```
+
+
+```{r}
+plot(outputforest)
+summary(outputforest)
+```
+
+
+
+
+
